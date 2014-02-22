@@ -13,3 +13,9 @@ class Data:
               each d_i contains the vectors for each word
               """
         raise NotImplementedError("process_data Not Implemented")
+    def get_vocab(self):
+        """
+        returns the vocab created 
+        """
+
+        raise NotImplementedError("process_data Not Implemented")

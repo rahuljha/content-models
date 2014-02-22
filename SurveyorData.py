@@ -50,6 +50,9 @@ class SurveyorData(Data):
 
         return vectors
 
+    def get_vocab(self):
+        return self.vocab
+
 if __name__ == "__main__":
     topic_file = "/data0/projects/fuse/rdg_experimental_lab/experiments/surveyor_2013/final_experiments/topics.txt";
     topic_fh = open(topic_file, "r")

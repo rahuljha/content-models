@@ -14,6 +14,7 @@ import scipy as sp
 from scipy.special import gammaln
 
 from SurveyorData import SurveyorData
+import operator
 
 def sample_index(p):
     """
@@ -48,7 +49,6 @@ class TopicSum:
 
         self.data = data
 
-        # TODO: needs to change
         """
         data: a hash with S keys, s_i representing each document set, 
               each s_i contains D keys, d_i representing each document, 
@@ -73,22 +73,28 @@ class TopicSum:
             self.topic_idx[docset] = idx
             idx += 1
 
+            # TODO: the same doc might belong to multiple topics, fix that
             for doc in data[docset].keys():
                 self.topic_idx[doc] = idx
                 idx += 1
 
-        assert idx == (len(self.n_topics) - 1)
+        assert len(self.topic_idx.keys()) == self.n_topics
 
         self._initialize()
 
-    def _conditional_distribution(self, m, w):
+    def _conditional_distribution(self, m, w, b, c, d):
         """
-        Conditional distribution (vector of size n_topics).
+        Conditional distribution (vector of size 3) over background, content and docspecific topic
         """
+
         vocab_size = self.nzw.shape[1]
-        left = (self.nzw[:,w] + self.beta) / \
-               (self.nz + self.beta * vocab_size)
-        right = (self.nmz[m,:] + self.alpha) / \
+        left = (self.nzw[[b,c,d],w] + self.beta) / \
+               (self.nz[[b,c,d]] + self.beta * vocab_size)
+
+        # assert that the sum of words in the three topics for this sentence are the same as the total number of words counted for this sentence
+#        assert self.nmz[m, [b,c,d]].sum() == self.nm[m]
+
+        right = (self.nmz[m, [b,c,d]] + self.alpha) / \
                 (self.nm[m] + sum(self.alpha))
         p_z = left * right
         # normalize to obtain probabilities
@@ -100,16 +106,41 @@ class TopicSum:
         Compute the likelihood that the model generated the data.
         """
         vocab_size = self.nzw.shape[1]
-        n_docs = self.nmz.shape[0]
+        n_sents = self.nmz.shape[0]
         lik = 0
 
-        for z in xrange(self.n_topics):
-            lik += log_multi_beta(self.nzw[z,:]+self.beta)
+        b = self.topic_idx['background']
+        b_counts = self.nzw[b,:]
+        c_counts = np.zeros(b_counts.size) # since vocab size is the same
+        d_counts = np.zeros(b_counts.size)
+
+        # create c and d counts
+        for docset in self.data.keys():
+            c = self.topic_idx[docset]
+            c_counts += self.nzw[c,:]
+            for doc in self.data[docset].keys():
+                d = self.topic_idx[doc]
+                d_counts += self.nzw[d,:]
+                
+        nzw_top = np.vstack([b_counts, c_counts, d_counts])
+
+        nmz_top = np.zeros((n_sents, 3))
+        for m in xrange(n_sents):
+                c = self.topic_idx[self.sent_assgmts[m].docset]
+                d = self.topic_idx[self.sent_assgmts[m].doc]
+#                assert set(self.nmz[m,:].nonzero()[0]) <= set([b,c,d]) # this sentence should not have word counts for any other topics
+                nmz_top[m,:] = self.nmz[m,[b,c,d]]
+                
+#        assert np.sum(self.nzw) == np.sum(nzw_top) # number of words shouldn't change
+#        assert np.sum(self.nmz) == np.sum(nmz_top) 
+        
+        for z in [0,1,2]:
+            lik += log_multi_beta(nzw_top[z,:]+self.beta)
             lik -= log_multi_beta(self.beta, vocab_size)
 
-        for m in xrange(n_docs):
-            lik += log_multi_beta(self.nmz[m,:]+self.alpha)
-            lik -= log_multi_beta(self.alpha, self.n_topics)
+        for m in xrange(n_sents):
+            lik += log_multi_beta(nmz_top[m,:]+self.alpha)
+            lik -= log_multi_beta(self.alpha)
 
         return lik
 
@@ -141,9 +172,9 @@ class TopicSum:
                     sent_idx = len(matrix_list) - 1
                     self.sent_assgmts[sent_idx] = sentAssgmt(docset, doc)
 
-        matrix = np.matrix(matrix_list)
+        self.matrix = np.array(matrix_list)
 
-        n_sents, vocab_size = matrix.shape
+        n_sents, vocab_size = self.matrix.shape
 
         # number of times document m and topic z co-occur
         self.nmz = np.zeros((n_sents, self.n_topics))
@@ -156,9 +187,10 @@ class TopicSum:
         for m in xrange(n_sents):
             # i is a number between 0 and doc_length-1
             # w is a number between 0 and vocab_size-1
-            for i, w in enumerate(word_indices(matrix[m, :])):
+            for i, w in enumerate(word_indices(self.matrix[m, :])):
                 # choose an arbitrary topic as first topic for word i
-                cur_topic = np.random.rand(['background', 'content', 'docspecific'])
+                choice = ['background', 'content', 'docspecific']
+                cur_topic = choice[np.random.randint(3)]
                 if cur_topic == 'background':
                     z = self.topic_idx['background']
                 elif cur_topic == 'content':
@@ -174,24 +206,39 @@ class TopicSum:
                 self.nz[z] += 1
                 self.topics[(m,i)] = z    
 
-    def run(self, matrix, maxiter=30):
+#        assert np.sum(self.nmz) == np.sum(self.nzw) # since # words shouldn't be different
+
+    def run(self, maxiter=30):
         """
         Run the Gibbs sampler.
         """
-        n_docs, vocab_size = matrix.shape
-        self._initialize(matrix)
+        n_sents, vocab_size = self.matrix.shape
+#        self._initialize(matrix)
 
         for it in xrange(maxiter):
-            for m in xrange(n_docs):
-                for i, w in enumerate(word_indices(matrix[m, :])):
+            for m in xrange(n_sents):
+                for i, w in enumerate(word_indices(self.matrix[m, :])):
                     z = self.topics[(m,i)]
                     self.nmz[m,z] -= 1
                     self.nm[m] -= 1
                     self.nzw[z,w] -= 1
                     self.nz[z] -= 1
 
-                    p_z = self._conditional_distribution(m, w)
-                    z = sample_index(p_z)
+                    d = self.topic_idx[self.sent_assgmts[m].doc]
+                    c = self.topic_idx[self.sent_assgmts[m].docset]
+                    b = self.topic_idx['background']
+
+                    cand_topics = ['background', 'content', 'docspecific']
+                    p_z = self._conditional_distribution(m, w, b, c, d)
+                    cur_topic = cand_topics[sample_index(p_z)]
+                    if cur_topic == 'background':
+                        z = self.topic_idx['background']
+                    elif cur_topic == 'content':
+                        docset = self.sent_assgmts[m].docset
+                        z = self.topic_idx[docset]
+                    elif cur_topic == 'docspecific':
+                        doc = self.sent_assgmts[m].doc
+                        z = self.topic_idx[doc]
 
                     self.nmz[m,z] += 1
                     self.nm[m] += 1
@@ -200,8 +247,15 @@ class TopicSum:
                     self.topics[(m,i)] = z
 
             # FIXME: burn-in and lag!
-            yield self.phi()                
+            yield self.phi() 
 
+
+def write_topic(filekey, word_probs):
+    
+    fh = open("/data0/projects/fuse/rdg_experimental_lab/experiments/content_models/code/out_topics/"+filekey+".txt", "w")
+    for x in sorted(word_probs.iteritems(), key=operator.itemgetter(1), reverse=True):
+        fh.write("%s\t%f\n" % (x[0], x[1]))
+    fh.close()
 
 if __name__ == "__main__":
     
@@ -211,11 +265,34 @@ if __name__ == "__main__":
     for line in topic_fh:
         topics.append(line.strip())
 
-    dataObj = SurveyorData(topics, "/data0/projects/fuse/rdg_experimental_lab/experiments/content_models/data/input_text/")
+    dataObj = SurveyorData(topics[0:2], "/data0/projects/fuse/rdg_experimental_lab/experiments/content_models/data/input_text/")
     # TODO: add caching here so vectors are not computed again and again
     # store vocab and data vectors
     vectors = dataObj.process_data()
 
-    alpha = [1.0, 5.0, 10.0]
+    # alpha = [background, content, docspecific]
+    alpha = [10.0, 1.0, 5.0]
     beta = 0.1
     tsObj = TopicSum(vectors, alpha, beta)
+    cur_phi = None
+    for it, phi in enumerate(tsObj.run(10)):
+        print "Iteration", it
+        print "Likelihood", tsObj.loglikelihood()
+        all_phi = phi
+
+    vocab = dataObj.get_vocab()
+    write_topic('background', dict(zip(vocab, phi[0])))
+
+    for docset in tsObj.data.keys():
+        dtopic = tsObj.topic_idx[docset]
+        dphi = phi[dtopic]
+        word_probs = dict(zip(vocab, dphi))
+        write_topic(docset, word_probs)
+
+        for doc in tsObj.data[docset]:
+            dtopic = tsObj.topic_idx[doc]
+            dphi = phi[dtopic]
+            word_probs = dict(zip(vocab, dphi))
+            write_topic(doc, word_probs)  
+
+
