@@ -2,7 +2,6 @@
 
 import numpy as np
 from scipy.special import gammaln
-from scipy import weave
 
 from SurveyorData import SurveyorData
 import operator
@@ -93,61 +92,44 @@ class TopicSumWeave:
                 
     def runGibbs(self, iters = 20):
 
-        code = r"""
-for(int i = 0; i<iters; i++) {
-   printf("iteration: %d\n", i);
-   for(int seq_idx=0; seq_idx<Nstate[0];seq_idx++) {
-     int m = STATE2(seq_idx, 0);
-     int w = STATE2(seq_idx, 1);
-     int z = STATE2(seq_idx, 2);
+        for i in xrange(iters):
+            print "iteration: %d" % i
+            for seq_idx in xrange(self.state.shape[0]):
+                m = self.state[seq_idx, 0]
+                w = self.state[seq_idx, 1]
+                z = self.state[seq_idx, 2]
+                self.nmz[m,z] -= 1
+                self.nzw[z,w] -= 1
+                self.nz[z] -= 1
 
-     NMZ2(m,z) -= 1;
-     NZW2(z,w) -= 1;
-     NZ1(z) -= 1;
+                # background, content and doc topics
+                z_idx = [0, self.topic_ids[seq_idx, 0], self.topic_ids[seq_idx, 1]] 
+                z_probs = [0,0,0]
 
-     int z_idx[3] = {0, TOPIC_IDS2(seq_idx, 0), TOPIC_IDS2(seq_idx, 1)};
-     float z_probs[3] = {0};
+                total = 0
+                for t in range(3):
+                    cur_z = z_idx[t]
+                    top1 = self.nzw[cur_z, w] + beta[t]
+                    bottom1 = self.nz[cur_z] + self.nzw.shape[1]*beta[t]
+                    top2 = self.nmz[m, cur_z] + alpha[t]
 
-     float total = 0.0;
-     for(int t=0; t<3; t++) {
-        int cur_z = z_idx[t];
-        float top1 = NZW2(cur_z, w) + BETA1(t);
-        float bottom1 = NZ1(cur_z) + Nnzw[1] * BETA1(t);
-        float top2 = NMZ2(m, cur_z) + ALPHA1(t);
-        z_probs[t] = (top1/bottom1)*top2;
-        total += z_probs[t];
-     }
+                    z_probs[i] = (top1/bottom1)*top2
+                    total += z_probs[t]
 
-     float offset = 0.0;
-     float threshold = RAND2(i,seq_idx) * total;
-     int new_z = 0;
-     for(int t=0; t<3; t++) {
-        offset += z_probs[t];
-        if(offset > threshold) {
-           STATE2(seq_idx,2) = z_idx[t];
-           new_z = z_idx[t];
-           break;
-        }
-     }
-     
-     NMZ2(m,new_z) += 1;
-     NZW2(new_z,w) += 1;
-     NZ1(new_z) += 1;
-   }
-}
-        """
+                # select the state
+                rand = np.random.random_sample() * total
+                total = 0
+                new_z = 50000
+                for t in range(3):
+                    new_z = z_idx[t]
+                    total += z_probs[t]
+                    if(total > rand):
+                        break
 
-        state = self.state
-        topic_ids = self.topic_ids
-        alpha = np.array(self.alpha)
-        beta = np.array(self.beta)
-        nzw = self.nzw
-        nmz = self.nmz
-        nz = self.nz
-
-        rand = np.random.random((iters,state.shape[0]))
-        
-        weave.inline(code, ['iters', 'state', 'topic_ids', 'alpha', 'beta', 'nzw', 'nmz', 'nz', 'rand'])
+                self.state[seq_idx,2] = new_z
+                self.nzw[new_z, w] += 1
+                self.nz[new_z] += 1
+                self.nmz[m, new_z] += 1
 
     def phi(self):
         """
@@ -160,7 +142,7 @@ for(int i = 0; i<iters; i++) {
 
     def write_topic(self, filekey, word_probs):
 
-        fh = open("/data0/projects/fuse/rdg_experimental_lab/experiments/content_models/code/test_topics_weave/"+filekey+".txt", "w")
+        fh = open("/data0/projects/fuse/rdg_experimental_lab/experiments/content_models/code/test_topics_numpy/"+filekey+".txt", "w")
         for x in sorted(word_probs.iteritems(), key=operator.itemgetter(1), reverse=True):
             fh.write("%s\t%f\n" % (x[0], x[1]))
         fh.close()
