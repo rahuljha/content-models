@@ -7,7 +7,7 @@ from SurveyorData import SurveyorData
 import operator
 
 
-class TopicSumWeave:
+class TopicSumNumpy:
 
     def __init__(self, dataObj, alpha, beta):
         self.alpha = alpha

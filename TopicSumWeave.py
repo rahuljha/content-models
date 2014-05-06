@@ -52,15 +52,15 @@ class TopicSumWeave:
         self.nz = np.zeros(self.topic_cnt, dtype=np.uint)
 
         # self.state is a words x 5 matrix of uint32: first column is the document ident, second column is the word ident, third column is assigned topic ident, fourth column is the docset topic for this word, fifth column is the doc topic for this word
-        self.state = np.empty((np.sum(dataObj.sent_vecs),3), dtype=np.uint)
-        self.topic_ids = np.empty((np.sum(dataObj.sent_vecs),2), dtype=np.uint)
+        self.state = np.empty((np.sum(self.dataObj.sent_vecs),3), dtype=np.uint)
+        self.topic_ids = np.empty((np.sum(self.dataObj.sent_vecs),2), dtype=np.uint)
         index = 0
-        for sent_idx, vec in enumerate(dataObj.sent_vecs):
+        for sent_idx, vec in enumerate(self.dataObj.sent_vecs):
             docset_topic_idx = self.docset2topic[self.dataObj.sent2docsets[sent_idx]]
             doc_topic_idx = self.doc2topic[self.dataObj.sent2docs[sent_idx]]
 
-            for word_idx in np.nonzero(dataObj.sent_vecs[sent_idx])[0]:
-                count = dataObj.sent_vecs[sent_idx][word_idx]
+            for word_idx in np.nonzero(self.dataObj.sent_vecs[sent_idx])[0]:
+                count = self.dataObj.sent_vecs[sent_idx][word_idx]
                 for c in xrange(count):
                   self.state[index, 0] = sent_idx
                   self.state[index, 1] = word_idx
@@ -168,13 +168,14 @@ for(int i = 0; i<iters; i++) {
             
 if __name__ == "__main__":
     
-    topic_file = "/data0/projects/fuse/rdg_experimental_lab/experiments/surveyor_2013/final_experiments/code/final_topics.txt";
+#    topic_file = "/data0/projects/fuse/rdg_experimental_lab/experiments/content_models/dev_topics.txt";
+    topic_file = "/data0/projects/fuse/rdg_experimental_lab/experiments/surveyor_2013/final_experiments/code/final_topics.txt"
     topic_fh = open(topic_file, "r")
     topics = []
     for line in topic_fh:
         topics.append(line.strip())
 
-    dataObj = SurveyorData(topics[0:5], "/data0/projects/fuse/rdg_experimental_lab/experiments/content_models/data/input_text/")
+    dataObj = SurveyorData(topics, "/data0/projects/fuse/rdg_experimental_lab/experiments/content_models/data/input_text/")
     # TODO: add caching here so vectors are not computed again and again
     # store vocab and data vectors
 
