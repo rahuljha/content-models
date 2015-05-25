@@ -144,11 +144,6 @@ for (sid,hit) in [i for i in reversed(sorted(h.items(), key = lambda x:x[1]))]:
         ret_summary[sid.replace("citing-", "")] = next_sent
         cur_summary.append(next_sent)
 
-#outfh = open("/data0/projects/fuse/rdg_experimental_lab/experiments/surveyor_2013/final_experiments/output_summaries/%s/%s_%s.txt" % (topic, topic, "cosinehits"), "w")    
-#for sent in cur_summary:
-#    outfh.write(sent+"\n")
-#outfh.close()
-
 out_fh = open("YOUR_OUTPUT_DIR/hits/%s.txt" % topic, "w")
 
 for (sid, sent) in ret_summary.items():
